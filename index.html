@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ClaimBack — turn denied claims into a ranked recovery queue</title>
+<meta name="description" content="ClaimBack triages claim denials by expected recovery and appeal deadline, then drafts a reviewable next action for billing staff. Local-first, no EHR integration. Try the live demo.">
+<style>
+:root{
+  --bg:#080a0f;--bg2:#0c1018;--ink:#e9edf5;--mut:#98a4bd;--faint:#6a7794;
+  --line:rgba(255,255,255,.09);--line2:rgba(255,255,255,.14);
+  --panel:rgba(255,255,255,.035);--panel2:rgba(255,255,255,.06);
+  --acc:#5b8cff;--acc2:#38d6c6;--good:#31d17f;--warn:#f4c245;--bad:#ff5d6c;
+  --grad:linear-gradient(135deg,#5b8cff,#38d6c6);
+  --shadow:0 20px 60px -20px rgba(0,0,0,.7);
+  --maxw:1120px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;color:var(--ink);background:var(--bg);line-height:1.6;
+  font-size:clamp(14.5px,12.6px + .28vw,16.5px);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+a{color:inherit}
+code{font-family:inherit}
+
+/* animated background */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;background:
+    radial-gradient(45% 55% at 12% 8%,rgba(91,140,255,.20),transparent 60%),
+    radial-gradient(40% 50% at 88% 6%,rgba(56,214,198,.16),transparent 60%),
+    radial-gradient(60% 60% at 78% 92%,rgba(91,140,255,.10),transparent 60%),
+    var(--bg);
+  animation:drift 24s ease-in-out infinite alternate;
+}
+body::after{
+  content:"";position:fixed;inset:0;z-index:-1;opacity:.5;pointer-events:none;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:46px 46px;
+  -webkit-mask-image:radial-gradient(circle at 50% 0%,#000,transparent 75%);
+          mask-image:radial-gradient(circle at 50% 0%,#000,transparent 75%);
+}
+@keyframes drift{to{filter:hue-rotate(18deg)}}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+  background:linear-gradient(rgba(8,10,15,.82),rgba(8,10,15,.55));border-bottom:1px solid var(--line)}
+.nav-in{display:flex;align-items:center;gap:18px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:18px;text-decoration:none}
+.brand .dot{width:22px;height:22px;border-radius:7px;background:var(--grad);box-shadow:0 0 22px rgba(91,140,255,.6)}
+.nav .links{display:flex;gap:22px;margin-left:auto;font-size:14.5px;color:var(--mut)}
+.nav .links a{text-decoration:none}
+.nav .links a:hover{color:var(--ink)}
+@media(max-width:720px){.nav .links{display:none}}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line2);
+  background:var(--panel2);color:var(--ink);padding:11px 18px;border-radius:11px;
+  font-weight:650;font-size:14.5px;text-decoration:none;cursor:pointer;transition:.18s}
+.btn:hover{transform:translateY(-1px);border-color:var(--acc);box-shadow:0 10px 30px -12px rgba(91,140,255,.5)}
+.btn-primary{background:var(--grad);color:#04070d;border:none;font-weight:800}
+.btn-primary:hover{box-shadow:0 14px 40px -12px rgba(56,214,198,.6)}
+
+/* hero */
+.hero{padding:84px 0 44px;position:relative}
+.hero .wrap{text-align:center}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:clamp(11.5px,10.4px + .3vw,12.5px);color:var(--mut);
+  border:1px solid var(--line2);border-radius:999px;padding:6px 12px;background:var(--panel)}
+.eyebrow .live{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(49,209,127,.18)}
+h1.hero-t{font-size:clamp(2.3rem,5.6vw,4.4rem);line-height:1.02;letter-spacing:-.03em;margin:20px auto 0;font-weight:850;max-width:16ch}
+h1 .accent{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{font-size:clamp(14.5px,12.5px + .4vw,1.24rem);color:var(--mut);margin:18px auto 0;max-width:60ch}
+.chips{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:26px}
+.chip{font-size:clamp(11px,10.2px + .25vw,12.5px);color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 12px}
+.cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:34px;text-align:center}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:18px 20px}
+.stat .bignum{font-size:clamp(1.8rem,3.2vw,2.7rem);font-weight:850;letter-spacing:-.02em;font-family:ui-monospace,monospace}
+.stat .stat-label{font-size:clamp(11.5px,10.6px + .28vw,12.5px);color:var(--faint);margin-top:4px}
+@media(max-width:680px){.stats{grid-template-columns:1fr;gap:12px}}
+
+/* sections */
+section.block{padding:56px 0}
+.kicker{text-align:center;font-size:clamp(11px,10.3px + .24vw,12.5px);font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--acc2)}
+h2.sect{text-align:center;font-size:clamp(1.7rem,3.4vw,2.6rem);letter-spacing:-.02em;margin:8px 0 0;font-weight:820}
+.sect-sub{text-align:center;color:var(--mut);margin:12px auto 0;max-width:64ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+
+.hiw{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:30px}
+@media(max-width:1040px){.hiw{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.hiw{grid-template-columns:1fr}}
+.step{padding:22px;border-radius:16px;background:var(--panel);border:1px solid var(--line)}
+.step .n{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-weight:800;background:var(--grad);color:#04070d}
+.step h3{margin:14px 0 6px;font-size:clamp(15.5px,14.6px + .36vw,18.5px)}
+.step p{margin:0;color:var(--mut);font-size:clamp(13px,12.1px + .29vw,14.5px)}
+
+/* demo */
+.demo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:26px auto 0;max-width:1500px;align-items:start}
+#demo .wrap{max-width:1440px}
+@media(max-width:1180px){.demo-grid{grid-template-columns:minmax(0,1fr);max-width:940px}}
+.controls{justify-content:center}
+.import-strip{background:var(--panel);border:1px dashed var(--line);border-radius:14px;padding:14px 16px;margin-top:16px}
+.import-strip.drag{border-color:var(--acc);background:rgba(76,141,255,.08)}
+@media(max-width:980px){.import-strip{flex-direction:column;align-items:flex-start}}
+.demo-hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 18px;border-bottom:1px solid var(--line)}
+.demo-hd .tag{font-size:11.5px;color:var(--faint);margin-left:auto}
+.pill-denied{background:rgba(255,93,108,.16);color:#ffb3ba}
+.demo-body{padding:6px 8px 12px;overflow-x:auto}
+.demo-body table{table-layout:auto;font-size:12.5px;line-height:1.4}
+.demo-body th{padding:9px 5px}
+.demo-body td{padding:7px 6px}
+table{width:100%;border-collapse:collapse;font-size:clamp(11.5px,9.9px + .39vw,13.5px)}
+th{text-align:center;font-size:clamp(9.5px,8.4px + .3vw,10.5px);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle;text-align:center}
+tr:last-child td{border-bottom:none}
+.code{color:var(--faint)}
+.strong{font-weight:700}
+.pill{font-weight:800;font-size:clamp(10.5px,9.6px + .28vw,12px);padding:2px 8px;border-radius:6px;font-family:ui-monospace,monospace}
+.pill-a{background:rgba(49,209,127,.18);color:#8ff2b6}
+.pill-b{background:rgba(244,194,69,.18);color:#ffe3a0}
+.pill-c{background:rgba(255,93,108,.16);color:#ffb3ba}
+.flag{font-size:10px;font-weight:800;color:#04070d;background:var(--bad);padding:1px 6px;border-radius:5px;letter-spacing:.04em}
+.action{color:var(--mut);font-size:clamp(10.5px,9.7px + .26vw,12px);max-width:150px;margin-inline:auto}
+.qrow{cursor:pointer;transition:background .14s}
+.qrow:hover,.qrow:focus{background:var(--panel2);outline:none}
+.qrow.sel{background:rgba(91,140,255,.16)}
+.qrow-c td{color:var(--faint)}
+.demo-metrics{display:flex;justify-content:center;gap:26px;flex-wrap:wrap;align-items:baseline;padding:14px 18px;border-top:1px solid var(--line)}
+.demo-metrics .big{font-size:clamp(1.3rem,1rem + 1.1vw,2rem);font-weight:850;font-family:ui-monospace,monospace;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.demo-metrics small{color:var(--faint);display:block;font-size:11.5px}
+#queueCard:not(.live) .demo-body,#queueCard:not(.live) .demo-metrics{visibility:hidden}
+#queueCard:not(.live) .demo-hd .note{display:none}
+.letter{white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:clamp(11px,9.4px + .43vw,12.5px);line-height:1.55;color:#d7deec;margin:0;padding:16px 18px;max-height:430px;overflow:auto}
+
+/* why */
+.why{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:28px}
+@media(max-width:760px){.why{grid-template-columns:1fr}}
+.reason{display:flex;gap:14px;padding:18px;border-radius:14px;background:var(--panel);border:1px solid var(--line)}
+.reason .ic{width:30px;height:30px;flex:0 0 auto;border-radius:9px;background:var(--panel2);display:grid;place-items:center;color:var(--acc2);font-weight:800}
+.reason h4{margin:2px 0 4px;font-size:clamp(14.5px,13.7px + .3vw,16px)}
+.reason p{margin:0;color:var(--mut);font-size:clamp(13px,12.3px + .26vw,14px)}
+
+/* pricing */
+.price{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:30px}
+@media(max-width:820px){.price{grid-template-columns:1fr}}
+.plan{padding:24px;border-radius:16px;background:var(--panel);border:1px solid var(--line)}
+.plan.hot{border-color:var(--acc);box-shadow:0 24px 60px -28px rgba(91,140,255,.7)}
+.plan .tag-hot{font-size:11px;font-weight:800;color:#04070d;background:var(--grad);padding:3px 9px;border-radius:6px;float:right}
+.plan h3{margin:0;font-size:clamp(16.5px,15.5px + .35vw,19px)}
+.plan .amt{font-size:clamp(24px,18px + 1vw,32px);font-weight:850;margin:12px 0 2px;font-family:ui-monospace,monospace}
+.plan .per{color:var(--faint);font-size:clamp(11.5px,10.6px + .28vw,12.5px)}
+.plan ul{list-style:none;padding:0;margin:16px 0 0}
+.plan li{padding:6px 0;color:var(--mut);font-size:clamp(13px,12.3px + .26vw,14px);border-bottom:1px solid rgba(255,255,255,.05)}
+.plan li:last-child{border-bottom:none}
+
+/* faq */
+.faq{margin:26px auto 0;max-width:760px}
+.faq details{border:1px solid var(--line);border-radius:13px;padding:4px 18px;background:var(--panel);margin-bottom:12px}
+.faq summary{cursor:pointer;font-weight:650;padding:12px 0;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";float:right;color:var(--acc);font-weight:800}
+.faq details[open] summary::after{content:"–"}
+.faq .ans{color:var(--mut);padding:0 0 16px;font-size:clamp(13px,12.1px + .29vw,14.5px)}
+
+/* form */
+.cta{margin-top:22px;padding:34px;border-radius:18px;background:
+  linear-gradient(180deg,rgba(91,140,255,.10),rgba(255,255,255,.02));
+  border:1px solid var(--line2);box-shadow:var(--shadow)}
+.cta h2{text-align:center;margin:0;font-size:clamp(1.5rem,3vw,2.1rem);letter-spacing:-.02em}
+.cta p{text-align:center;color:var(--mut);margin:10px 0 20px}
+.cta form{text-align:center}
+.field{display:block;margin-bottom:14px}
+.field label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:6px}
+.field input,.field select{width:100%;padding:12px 13px;border-radius:11px;border:1px solid var(--line2);
+  background:rgba(0,0,0,.28);color:var(--ink);font-size:14.5px}
+.field input:focus,.field select:focus{outline:none;border-color:var(--acc)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:560px){.row2{grid-template-columns:1fr}}
+.done{padding:26px;text-align:center}
+.done .ok{color:var(--good);font-size:1.6rem;font-weight:800}
+.fineprint{font-size:12px;color:var(--faint);margin-top:12px}
+
+/* footer */
+footer{padding:40px 0;color:var(--faint);font-size:13px;border-top:1px solid var(--line);margin-top:30px;text-align:center}
+footer .disc{max-width:80ch;margin:12px auto 0;line-height:1.55}
+
+/* reveal */
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+.reveal.in{opacity:1;transform:none}
+
+/* marquee */
+.marquee{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-top:26px}
+.marquee-in{display:flex;white-space:nowrap;width:max-content;animation:marq 34s linear infinite;padding:12px 0;font-family:ui-monospace,monospace;font-size:13px;color:var(--mut)}
+.marquee:hover .marquee-in{animation-play-state:paused}
+.marquee span{padding:0 22px}
+@keyframes marq{to{transform:translateX(-50%)}}
+
+@media(max-width:820px){
+  .wrap{padding:0 18px}
+  .hero{padding:58px 0 34px}
+  section.block{padding:50px 0}
+  .demo-grid{gap:14px}
+  .cta{padding:28px}
+}
+
+@media(max-width:680px){
+  .wrap{padding:0 14px}
+  section.block{padding:44px 0}
+  .hero{padding:44px 0 26px}
+  .cta-row .btn{flex:1;justify-content:center}
+  .controls{gap:10px}
+  .demo-hd{padding:13px 14px}
+  .demo-body{padding:4px 6px 10px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .demo-grid{grid-template-columns:1fr;gap:12px}
+  table{min-width:0;font-size:clamp(10.5px,9.1px + .43vw,12px)}
+  th,td{padding:9px 5px}
+  th{white-space:normal;letter-spacing:.04em}
+  td{white-space:normal}
+  .qrow:active{background:var(--panel2)}
+  .letter{padding:14px;max-height:360px}
+  .faq details{padding:0 14px}
+  .cta{padding:22px;border-radius:16px}
+  .field input,.field select{font-size:16px;padding:13px 14px}
+  .btn{font-size:13.5px;padding:11px 14px}
+  .nav-in{height:58px;gap:10px}
+  .brand{font-size:16px}
+  .nav .btn-primary{padding:8px 11px;font-size:12px;border-radius:9px}
+  .demo-metrics{gap:16px;padding:12px 14px}
+  .stats{gap:12px}
+  .marquee-in{font-size:12px;padding:10px 0}
+  .marquee span{padding:0 16px}
+}
+
+@media(max-width:420px){
+  .nav .btn-primary{font-size:11px;padding:7px 9px}
+  h1.hero-t{font-size:31px}
+  .chips,.cta-row{gap:8px}
+  .chip{padding:6px 10px;font-size:12px}
+  .stat{padding:15px 16px}
+  .stat .bignum{font-size:2rem}
+  th{font-size:clamp(8.8px,7.9px + .34vw,9.5px)}
+  td{padding:10px 7px}
+  .letter{font-size:11px;max-height:330px}
+  .cta{padding:18px}
+  .cta h2{font-size:1.35rem}
+  .row2{gap:12px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js');</script>
+
+<nav class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top"><span class="dot"></span>ClaimBack</a>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#demo">Live demo</a>
+      <a href="#why">Why it wins</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a class="btn btn-primary" href="#cta">Talk to us</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="eyebrow reveal"><span class="live"></span>Self-hosted · no PHI to our servers · runs on your machine</span>
+    <h1 class="hero-t reveal">Stop leaving denied claims on the <span class="accent">table.</span></h1>
+    <p class="lede reveal">ClaimBack turns a pile of claim denials into a ranked recovery queue and hands your staff a reviewable next action — corrected-claim notes, medical-necessity letters, COB routing — before anything is submitted. Built for billing teams drowning in denials.</p>
+    <div class="chips reveal">
+      <span class="chip">No EHR integration needed</span>
+      <span class="chip">Runs on one machine</span>
+      <span class="chip">Approval required</span>
+      <span class="chip">Works with any CSV export</span>
+    </div>
+    <div class="cta-row reveal">
+      <a class="btn btn-primary" href="#demo">Try the live demo</a>
+      <a class="btn" href="#pricing">See pricing</a>
+    </div>
+  </div>
+</header>
+
+<section class="block" style="padding-top:6px">
+  <div class="wrap">
+    <div class="stats reveal">
+      <div class="stat"><div class="bignum" data-target="41" data-suffix="%">0</div><div class="stat-label">of providers report more than 10% of claims denied</div></div>
+      <div class="stat"><div class="bignum" data-target="65.2" data-dec="1" data-suffix="%">0</div><div class="stat-label">of appealed denials get overturned (California, 2021–25)</div></div>
+      <div class="stat"><div class="bignum" data-target="37">0</div><div class="stat-label">denial-code strategies built into the triage engine</div></div>
+    </div>
+    <div class="fineprint" style="margin-top:10px">Figures from published industry sources; this page is a product demonstration with synthetic data. Not medical or legal advice.</div>
+  </div>
+</section>
+
+<section id="how" class="block">
+  <div class="wrap">
+    <div class="kicker reveal">How it works</div>
+    <h2 class="sect reveal">Ingest, then triage, then draft</h2>
+    <p class="sect-sub reveal">It reads the claim denials you already have, decides which deserve a fight, and hands your staff a ready-to-review next action.</p>
+    <div class="hiw">
+      <div class="step reveal"><div class="n">1</div><h3>Ingest</h3><p>Drop in a denial export or paste EOB text. No EHR hookup required — it works on the claims you already handle.</p></div>
+      <div class="step reveal"><div class="n">2</div><h3>Triage</h3><p>Scores each denial: expected recovery, days left on the appeal clock, and whether it is even worth fighting.</p></div>
+      <div class="step reveal"><div class="n">3</div><h3>Draft</h3><p>Creates the next artifact — resubmission note, medical-necessity letter, or COB routing — as a draft, not a submitted claim.</p></div>
+      <div class="step reveal"><div class="n">4</div><h3>Review</h3><p>Staff approve or reject each draft. Approvals and send checks are audit-logged, and the default safety mode keeps automatic submission off.</p></div>
+    </div>
+    <div class="marquee reveal" aria-hidden="true">
+      <div class="marquee-in">
+        <span>missing info → corrected claim</span><span>COB → bill the primary first</span><span>"not medically necessary" → demand written criteria</span><span>bundling → NCCI cite</span><span>expired → write-off</span><span>no authorization → retro-request</span>
+        <span>missing info → corrected claim</span><span>COB → bill the primary first</span><span>"not medically necessary" → demand written criteria</span><span>bundling → NCCI cite</span><span>expired → write-off</span><span>no authorization → retro-request</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="demo" class="block">
+  <div class="wrap">
+    <div class="kicker reveal">Live demo</div>
+    <h2 class="sect reveal">Try it: twelve denied claims, triaged into reviewable drafts</h2>
+    <p class="sect-sub reveal">Synthetic sample data. Hit Run and watch the denial pile turn into a ranked recovery queue, then click any row to see the exact draft ClaimBack hands to staff. This uses the same triage logic as the desktop app.</p>
+
+    <div class="controls reveal" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:20px">
+      <button id="runBtn" class="btn btn-primary" type="button">Run triage</button>
+      <button id="resetBtn" class="btn" type="button">Reset</button>
+      <span id="demoStatus" class="muted" style="color:var(--mut);font-size:14px"></span>
+    </div>
+
+    <div class="import-strip reveal" id="importStrip" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:16px">
+      <b>Import your own CSV</b>
+      <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
+      <button id="importBtn" class="btn" type="button">Choose CSV</button>
+      <span class="muted">or drop a CSV anywhere in this demo. Files stay in your browser.</span>
+      <span id="importStatus" class="muted" style="margin-left:auto;color:var(--mut);font-size:14px"></span>
+    </div>
+
+    <div class="demo-grid reveal" style="margin-top:18px">
+      <div class="card">
+        <div class="demo-hd"><b>Denial feed</b><span class="tag">input · sample</span></div>
+        <div class="demo-body">
+          <table>
+            <thead><tr><th>Claim</th><th>Payer</th><th>CPT</th><th>Service</th><th>Denial</th><th>Amount</th><th>Days</th><th>Status</th></tr></thead>
+            <tbody id="feedBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="queueCard" class="card">
+        <div class="demo-hd"><b>Triage queue</b><span class="tag note">output</span></div>
+        <div class="demo-body">
+          <table>
+            <thead><tr><th>Tier</th><th>Claim</th><th>CPT</th><th>Service</th><th>Denial</th><th>Denied</th><th>Exp.</th><th>Deadline</th><th>Action</th></tr></thead>
+            <tbody id="queueBody"></tbody>
+          </table>
+        </div>
+        <div class="demo-metrics">
+          <div><span id="totalVal" class="big">$0.00</span><small>expected recovery worth fighting</small></div>
+          <div><span id="writeoffCount" class="big" style="font-size:1.4rem;color:var(--mut)">—</span><small>recommended write-offs</small></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="letterCard" class="card reveal" style="margin-top:18px">
+      <div class="demo-hd"><b id="letterTitle">Drafted action</b><span class="tag">preview · staff review required</span></div>
+      <pre id="letterBox" class="letter"></pre>
+    </div>
+    <div class="fineprint reveal" style="margin-top:10px">The public demo stops at the staff-review gate. In the local app, drafts require human approval and no appeal is submitted automatically.</div>
+  </div>
+</section>
+
+<section id="why" class="block">
+  <div class="wrap">
+    <div class="kicker reveal">Why it wins</div>
+    <h2 class="sect reveal">Built for the people doing the work</h2>
+    <p class="sect-sub reveal">Incumbent denial tools target hospitals and demand EHR or PM integration. Solo clinics and the billing companies that serve them still work denial piles by hand. That gap is the product.</p>
+    <div class="why">
+      <div class="reason reveal"><div class="ic">01</div><div><h4>Honest triage</h4><p>It tells you which denials <em>not</em> to fight and which to fight. Trust comes from the write-offs, not just the wins.</p></div></div>
+      <div class="reason reveal"><div class="ic">02</div><div><h4>Local-first and private</h4><p>Deploys on your machine and works on data you already hold. Nothing about patient records is sent to our servers.</p></div></div>
+      <div class="reason reveal"><div class="ic">03</div><div><h4>No integration tax</h4><p>Runs on a CSV export today. Start Monday, not after a six-month EHR integration project.</p></div></div>
+      <div class="reason reveal"><div class="ic">04</div><div><h4>Review, not auto-send</h4><p>Every letter is a draft your staff approves. You stay the submitting agent; it stays a copilot.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="block">
+  <div class="wrap">
+    <div class="kicker reveal">Pricing</div>
+    <h2 class="sect reveal">Founder pricing, from $99/mo</h2>
+    <p class="sect-sub reveal">Flat monthly plus a small per-appeal fee, shaped around a no-recovery-no-fee story. Illustrative early tiers; a pilot sets final terms.</p>
+    <div class="price">
+      <div class="plan reveal"><h3>Solo biller</h3><div class="amt">$99</div><div class="per">/mo + $5 per appeal filed</div><ul><li>Up to 3 practices</li><li>Unlimited denials imported</li><li>Draft letters for A/B tier</li><li>Email support</li></ul></div>
+      <div class="plan hot reveal"><span class="tag-hot">Most popular</span><h3>Clinic group</h3><div class="amt">$499</div><div class="per">/mo + $8 per appeal filed</div><ul><li>Up to 12 practices</li><li>Deadline alerts for urgent tier</li><li>Queue export for your staff</li><li>Audit trail and review status</li></ul></div>
+      <div class="plan reveal"><h3>Service co.</h3><div class="amt">$999</div><div class="per">/mo + $8 per appeal filed</div><ul><li>Unlimited practices</li><li>Multi-tenancy</li><li>Slack and email escalation</li><li>Payer criteria library</li></ul></div>
+    </div>
+    <div class="fineprint reveal" style="margin-top:18px">Illustrative. One biller with 30 practices and roughly 2k denials a month is around a $12k–$36k per year account at these rates.</div>
+  </div>
+</section>
+
+<section id="faq" class="block">
+  <div class="wrap">
+    <div class="kicker reveal">FAQ</div>
+    <h2 class="sect reveal">Straight answers</h2>
+    <div class="faq">
+      <details class="reveal"><summary>Does it auto-send appeals?</summary><div class="ans">No. ClaimBack creates a draft and records a staff-review state. The local app keeps an audit trail, starts with the kill switch on, and does not submit appeals to payers.</div></details>
+      <details class="reveal"><summary>Is this legal or medical advice?</summary><div class="ans">No. It is a productivity copilot for billing teams and billing intermediaries. Clinical and coverage judgments stay with your staff and payers.</div></details>
+      <details class="reveal"><summary>Do you touch my patients' records?</summary><div class="ans">No. It runs locally on your machine against exports you already handle, and the data on this page is synthetic.</div></details>
+      <details class="reveal"><summary>What do I need to start?</summary><div class="ans">A CSV export of denied claims with claim number, payer, CPT, denial code, amount and appeal deadline. If you can export that, you can run a queue the same day.</div></details>
+      <details class="reveal"><summary>How accurate is the triage?</summary><div class="ans">It is deterministic and honest: unwinnable or expired denials are flagged as write-off instead of giving false hope. Win estimates get sharper as outcomes feed back in.</div></details>
+    </div>
+  </div>
+</section>
+
+<section id="cta" class="block" style="padding-bottom:60px">
+  <div class="wrap">
+    <div class="cta reveal">
+      <h2>Want a queue on your own denial data?</h2>
+      <p>Tell us the shape of your practice or book of business and we will set up a review-gated pilot.</p>
+      <form id="leadForm" novalidate>
+        <div class="field">
+          <label for="email">Work email</label>
+          <input id="email" name="email" type="email" placeholder="you@billing.co" autocomplete="email">
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="org">Practice / billing company</label>
+            <input id="org" name="org" type="text" placeholder="e.g. Lakeside Billing, 12 practices">
+          </div>
+          <div class="field">
+            <label for="vol">Denials per month (approx.)</label>
+            <select id="vol" name="vol">
+              <option value="">Select a range</option>
+              <option>Under 200</option>
+              <option>200 – 1,000</option>
+              <option>1,000 – 5,000</option>
+              <option>5,000+</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" type="submit">Request a pilot</button>
+      </form>
+      <div id="leadDone" class="done" hidden>
+        <div class="ok">Thanks — you are on the list.</div>
+        <p class="fineprint">We will reach out to set up a review-gated pilot. To send it right now, open the note below.</p>
+        <p><a id="leadLink" class="btn" href="#">Open email draft</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="brand" style="font-size:15px"><span class="dot"></span>ClaimBack</div>
+    <div class="disc">Demonstration site for a fictional product. All claim data shown is synthetic and generated for illustration. Claims about denial and appeal rates are drawn from published industry sources and are approximate. Nothing here is medical, billing, or legal advice; nothing is auto-submitted to any payer. Not affiliated with any insurer or health plan.</div>
+  </div>
+</footer>
+
+<script>
+/* Pure triage + drafting engine for the landing-page demo.
+   Mirrors the Python claimback/triage.py + appeals.py so the marketing demo
+   shows real product behavior. No DOM, no network -> testable under node. */
+(function (global) {
+  "use strict";
+
+  var A_FLOOR = 75.0;
+  var C_FLOOR = 15.0;
+  var URGENT_WINDOW = 10;
+
+  function r2(x) { return Math.round(x * 100) / 100; }
+
+  function triage(sample, kb) {
+    var entry = kb[sample.code] || kb["000"];
+    var win = entry ? entry.win : 0.2;
+    var amount = sample.amount || 0;
+    var expected = r2(amount * win);
+    var days = sample.days_left;
+    var appealable = entry ? entry.appealable !== false : true;
+    var kind = entry ? entry.kind : "ADMIN";
+
+    var tier;
+    if (!appealable || (days != null && days < 0) || expected < C_FLOOR) tier = "C";
+    else if (expected >= A_FLOOR) tier = "A";
+    else tier = "B";
+
+    var action;
+    if (!appealable) action = "write-off — not appealable (KB)";
+    else if (tier === "C") action = "write-off — low recovery or clock expired";
+    else if (kind === "RESUBMIT") action = "resubmit corrected claim";
+    else if (kind === "COB") action = "route COB — bill primary, rebill secondary";
+    else action = "draft appeal letter";
+
+    return {
+      tier: tier,
+      kind: kind,
+      expected: expected,
+      urgent: days != null && days >= 0 && days <= URGENT_WINDOW,
+      days_left: days,
+      action: action,
+      name: entry ? entry.name : "unrecognized denial",
+      strategy: entry ? entry.strategy : ""
+    };
+  }
+
+  function buildQueue(samples, kb) {
+    var out = samples.map(function (s) {
+      var row = {};
+      for (var k in s) if (Object.prototype.hasOwnProperty.call(s, k)) row[k] = s[k];
+      var t = triage(s, kb);
+      for (var j in t) if (Object.prototype.hasOwnProperty.call(t, j)) row[j] = t[j];
+      return row;
+    });
+    out.sort(function (a, b) {
+      if (!!a.urgent !== !!b.urgent) return a.urgent ? -1 : 1;
+      if (b.expected !== a.expected) return b.expected - a.expected;
+      var al = a.days_left == null ? 9999 : a.days_left;
+      var bl = b.days_left == null ? 9999 : b.days_left;
+      return al - bl;
+    });
+    return out;
+  }
+
+  var FOOTER = "\n\nDraft generated by ClaimBack from the payer's denial, not from the " +
+    "chart. Before sending, verify the appeal window, the payer's required forms and " +
+    "address, and every citation. This is not legal advice.";
+
+  function buildLetter(sample, tri) {
+    var kind = tri.kind || "ADMIN";
+    var head = [
+      "Re: Request for Reconsideration - Denied Claim " + sample.claim_no,
+      "Payer: " + sample.payer + "  Procedure: " + sample.proc + " - " + sample.proc_desc,
+      "Denial code: " + sample.code + " - " + tri.name,
+      "Amount at issue: $" + (sample.amount || 0).toFixed(2),
+      "Appeal window closes in: " + (sample.days_left == null ? "unknown" : sample.days_left + " days"),
+      ""
+    ];
+    var body;
+    if (kind === "RESUBMIT") {
+      body = "This is a CORRECTED CLAIM, not a duplicate. The deficiency behind code " +
+        sample.code + " is cured by the enclosed documents. Please process under " +
+        "corrected-claim procedures and preserve the original filing date.";
+    } else if (kind === "LMN") {
+      body = "We request overturn of " + sample.proc + " as not medically necessary. " +
+        "First, please provide the written plan criteria and reviewing clinician within " +
+        "14 business days; denial without that basis is procedurally deficient, and we " +
+        "reserve external review.";
+    } else if (kind === "COB") {
+      body = "Denied for coordination of benefits. Please adjudicate under your " +
+        "secondary/crossover procedures, or return for resubmission to the correct " +
+        "primary with the primary EOB attached.";
+    } else if (kind === "CODING") {
+      body = "We dispute the bundling/edit denial for " + sample.proc + ". Please " +
+        "confirm the exact edit and required documentation; if the code pair is " +
+        "separately payable, it should pay with modifier support.";
+    } else {
+      body = "We dispute denial code " + sample.code + ". Before we send full evidence, " +
+        "please confirm the exact reason in writing within 14 business days; denial " +
+        "without that basis is procedurally deficient.";
+    }
+    return head.join("\n") + "\n" + body + "\n\nStrategy: " + tri.strategy + FOOTER;
+  }
+
+  global.CB = { triage: triage, buildQueue: buildQueue, buildLetter: buildLetter };
+})(typeof window !== "undefined" ? window : global);
+</script>
+<script>
+/* Sample denial set + compact KB for the landing-page demo.
+   Synthetic data only. `days_left` is precomputed so the browser demo is
+   deterministic and does not depend on the current date. */
+(function (global) {
+  "use strict";
+  var KB = {
+    "16": { name: "Claim lacks information needed for adjudication", kind: "RESUBMIT", win: 0.65, strategy: "Correct and resubmit with the missing document; keep proof of the original timely submission." },
+    "22": { name: "Care is covered under another plan (COB)", kind: "COB", win: 0.6, strategy: "Route to the correct primary first, then bill secondary with the primary EOB." },
+    "29": { name: "The time limit for filing has expired", kind: "ADMIN", win: 0.2, strategy: "Only worth appealing with proof of timely original submission; otherwise write off." },
+    "45": { name: "Charge exceeds fee schedule / contractual cap", kind: "ADMIN", win: 0.15, strategy: "Allowed amount is contractual; verify once, then write off if correct." },
+    "50": { name: "Not a covered benefit or not medically necessary", kind: "LMN", win: 0.35, strategy: "Dispute the criteria, demand the written plan basis, attach clinical evidence." },
+    "55": { name: "Missing or invalid diagnosis code", kind: "RESUBMIT", win: 0.6, strategy: "Correct-and-resubmit with the ICD-CPT linkage fixed." },
+    "97": { name: "Benefit included in payment for another service", kind: "CODING", win: 0.4, strategy: "If not bundled or a modifier is allowed, argue separately payable with NCCI support." },
+    "197": { name: "Precertification or authorization absent", kind: "ADMIN", win: 0.45, strategy: "If an authorization existed, attach it; else request retro-authorization." },
+    "000": { name: "Unknown / non-standard denial code", kind: "ADMIN", win: 0.2, strategy: "Call the payer to identify the exact reason before drafting anything." }
+  };
+  var SAMPLES = [
+    { claim_no: "CLM-A001", payer: "Aetna", proc: "99213", proc_desc: "office visit", code: "16", amount: 85, days_left: 22 },
+    { claim_no: "CLM-A002", payer: "Cigna Open Access", proc: "20610", proc_desc: "joint injection", code: "50", amount: 260, days_left: 8 },
+    { claim_no: "CLM-A003", payer: "BCBS", proc: "71046", proc_desc: "chest x-ray", code: "97", amount: 240, days_left: 40 },
+    { claim_no: "CLM-A004", payer: "UnitedHealthcare", proc: "97110", proc_desc: "therapeutic exercise", code: "22", amount: 180, days_left: 15 },
+    { claim_no: "CLM-A005", payer: "Humana MA", proc: "99396", proc_desc: "preventive exam", code: "45", amount: 165, days_left: 60 },
+    { claim_no: "CLM-A006", payer: "Molina MA", proc: "90834", proc_desc: "psychotherapy", code: "50", amount: 150, days_left: 5 },
+    { claim_no: "CLM-A007", payer: "State Medicaid", proc: "85025", proc_desc: "CBC", code: "55", amount: 45, days_left: 70 },
+    { claim_no: "CLM-A008", payer: "Oxford Health", proc: "93000", proc_desc: "EKG", code: "45", amount: 75, days_left: 90 },
+    { claim_no: "CLM-A009", payer: "Emblem GPP", proc: "20610", proc_desc: "joint injection", code: "50", amount: 300, days_left: -4 },
+    { claim_no: "CLM-A010", payer: "Workers Comp", proc: "97161", proc_desc: "PT evaluation", code: "197", amount: 210, days_left: 12 },
+    { claim_no: "CLM-A011", payer: "Aetna", proc: "99213", proc_desc: "office visit", code: "45", amount: 85, days_left: 30 },
+    { claim_no: "CLM-A012", payer: "BCBS", proc: "71046", proc_desc: "chest x-ray", code: "29", amount: 250, days_left: -10 }
+  ];
+  global.CLAIMBACK_DATA = { kb: KB, samples: SAMPLES };
+})(typeof window !== "undefined" ? window : global);
+</script>
+<script>
+/* Browser-only CSV parser for the static demo. No network or file storage. */
+(function (global) {
+  "use strict";
+
+  var MAX_ROWS = 50000;
+
+  function parseRows(text) {
+    var rows = [], row = [], field = "", quoted = false, i = 0;
+    while (i < text.length) {
+      var c = text.charAt(i);
+      if (quoted) {
+        if (c === '"') {
+          if (text.charAt(i + 1) === '"') { field += '"'; i += 2; continue; }
+          quoted = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if (c === '"') { quoted = true; i++; continue; }
+      if (c === ",") { row.push(field); field = ""; i++; continue; }
+      if (c === "\n") {
+        row.push(field); rows.push(row); row = []; field = ""; i++;
+        if (text.charAt(i) === "\r") i++;
+        continue;
+      }
+      if (c === "\r") { i++; continue; }
+      field += c; i++;
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  function findColumn(header, names) {
+    for (var i = 0; i < names.length; i++) {
+      var idx = header.indexOf(names[i]);
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  function numeric(value) {
+    var n = parseFloat(String(value || "").replace(/[^0-9.\-]/g, ""));
+    return isNaN(n) || n < 0 ? 0 : n;
+  }
+
+  function daysFromDeadline(value) {
+    var s = String(value || "").trim();
+    if (!s) return null;
+    var parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    var deadline;
+    if (parts) deadline = Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+    else deadline = Date.parse(s);
+    if (isNaN(deadline)) return null;
+    return Math.ceil((deadline - Date.now()) / 86400000);
+  }
+
+  function codeValue(value) {
+    var s = String(value || "").trim().toUpperCase();
+    if (!s) return "000";
+    return s.replace(/^0+(?=\d)/, "");
+  }
+
+  function parseDenials(text) {
+    if (typeof text !== "string" || !text.trim()) return { rows: [], error: "CSV is empty" };
+    var rows = parseRows(text.replace(/^\uFEFF/, ""));
+    var i = 0;
+    while (i < rows.length && (!rows[i].length || (rows[i].length === 1 && !rows[i][0].trim()))) i++;
+    if (i >= rows.length) return { rows: [], error: "no CSV header found" };
+    var header = rows[i].map(function (x) { return x.trim().toLowerCase(); });
+    i++;
+    var idx = {
+      claim: findColumn(header, ["claim_no", "claim"]),
+      payer: findColumn(header, ["payer", "plan"]),
+      proc: findColumn(header, ["proc_code", "cpt", "procedure"]),
+      proc_desc: findColumn(header, ["proc_desc", "service", "procedure_desc"]),
+      code: findColumn(header, ["denial_code", "code"]),
+      amount: findColumn(header, ["denied_amount", "amount"]),
+      days: findColumn(header, ["days_left", "days"]),
+      deadline: findColumn(header, ["timely_deadline", "deadline"])
+    };
+    var missing = [];
+    if (idx.claim < 0) missing.push("claim_no");
+    if (idx.payer < 0) missing.push("payer");
+    if (idx.proc < 0) missing.push("proc_code");
+    if (idx.code < 0) missing.push("denial_code");
+    if (idx.amount < 0) missing.push("denied_amount");
+    if (missing.length) return { rows: [], error: "missing required columns: " + missing.join(", ") };
+    var out = [], seen = {}, duplicates = 0;
+    for (; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row.length || (row.length === 1 && !row[0].trim())) continue;
+      var claim = String(row[idx.claim] || "").trim();
+      if (!claim) continue;
+      if (seen[claim]) { duplicates++; continue; }
+      seen[claim] = true;
+      var days = null;
+      if (idx.days >= 0) {
+        days = numeric(row[idx.days]);
+        if (!isFinite(days)) days = null;
+      } else if (idx.deadline >= 0) {
+        days = daysFromDeadline(row[idx.deadline]);
+      }
+      out.push({
+        claim_no: claim,
+        payer: String(row[idx.payer] || "unknown payer").trim(),
+        proc: String(row[idx.proc] || "no CPT").trim(),
+        proc_desc: String(row[idx.proc_desc] || "service").trim(),
+        code: codeValue(row[idx.code]),
+        amount: numeric(row[idx.amount]),
+        days_left: days
+      });
+      if (out.length >= MAX_ROWS) break;
+    }
+    if (!out.length) return { rows: [], error: "no denial rows found" };
+    return { rows: out, duplicates: duplicates };
+  }
+
+  global.CSV = { parseRows: parseRows, parseDenials: parseDenials };
+})(typeof window !== "undefined" ? window : global);
+
+</script>
+<script>
+/* Landing-page interactive wiring: feeds the sample denials through the
+   real triage engine (engine.js) and renders the ranked queue + a preview
+   of the exact drafted action. No network calls. */
+(function () {
+  "use strict";
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+
+  var CB = window.CB;
+  var DATA = window.CLAIMBACK_DATA;
+  function $(id) { return document.getElementById(id); }
+  function money2(x) { return "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  var LETTER_EMPTY = "Run the triage, then click any row in the queue to preview the exact action ClaimBack would draft.";
+  var CURRENT = DATA ? DATA.samples.slice() : [];
+  var MAX_CSV_BYTES = 10 * 1024 * 1024;
+
+  function animate(el, from, to, fmt) {
+    var dur = 900, t0 = null;
+    function step(ts) {
+      if (t0 === null) t0 = ts;
+      var p = Math.min(1, (ts - t0) / dur);
+      var val = from + (to - from) * (1 - Math.pow(1 - p, 3));
+      el.textContent = fmt(val);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function renderFeed() {
+    var b = $("feedBody");
+    if (!b) return;
+    b.innerHTML = CURRENT.map(function (s) {
+      return "<tr><td class='mono'>" + s.claim_no + "</td><td>" + s.payer +
+        "</td><td class='mono'>" + s.proc + "</td><td>" + s.proc_desc +
+        "</td><td class='code'>" + s.code + "</td><td class='mono'>" + money2(s.amount) +
+        "</td><td class='mono'>" + (s.days_left < 0 ? "expired" : s.days_left + "d") +
+        "</td><td><span class='pill pill-denied'>denied</span></td></tr>";
+    }).join("");
+  }
+
+  function tierPill(t) { return t === "A" ? "pill-a" : (t === "B" ? "pill-b" : "pill-c"); }
+
+  function renderQueue() {
+    var body = $("queueBody");
+    if (!body) return;
+    var q = CB.buildQueue(CURRENT, DATA.kb);
+    var worth = q.filter(function (r) { return r.tier !== "C"; });
+    var writeoffs = q.filter(function (r) { return r.tier === "C"; });
+    var urgent = q.filter(function (r) { return r.urgent; }).length;
+    var total = q.reduce(function (a, r) { return a + (r.tier !== "C" ? r.expected : 0); }, 0);
+
+    body.innerHTML = q.map(function (r, i) {
+      var days = r.days_left == null ? "" : (r.days_left < 0 ? "expired" : r.days_left + "d left");
+      var flag = r.urgent ? " <span class='flag'>URGENT</span>" : "";
+      var cls = r.tier === "C" ? "qrow qrow-c" : "qrow";
+      return "<tr class='" + cls + "' data-i='" + i + "' tabindex='0'><td>" +
+        "<span class='pill " + tierPill(r.tier) + "'>" + r.tier + "</span></td>" +
+        "<td class='mono strong'>" + r.claim_no + "</td>" +
+        "<td class='mono'>" + r.proc + "</td><td>" + r.proc_desc + "</td>" +
+        "<td class='code'>" + r.code + "</td><td class='mono'>" + money2(r.amount) + "</td>" +
+        "<td class='mono'>" + money2(r.expected) + "</td>" +
+        "<td>" + days + flag + "</td><td class='action'>" + r.action + "</td></tr>";
+    }).join("");
+
+    var status = $("demoStatus");
+    if (status) {
+      status.innerHTML = "<strong>" + worth.length + "</strong> claims worth fighting &middot; <strong>" +
+        writeoffs.length + "</strong> recommended write-offs &middot; <strong>" + urgent +
+        "</strong> urgent. Click any row to see the drafted action.";
+    }
+    if ($("totalVal")) animate($("totalVal"), 0, total, money2);
+    if ($("writeoffCount")) $("writeoffCount").textContent = writeoffs.length + " / " + q.length;
+    var wrap = $("queueCard");
+    if (wrap) wrap.classList.add("live");
+
+    var rows = body.querySelectorAll(".qrow");
+    Array.prototype.forEach.call(rows, function (row) {
+      function pick() {
+        var i = parseInt(row.getAttribute("data-i"), 10);
+        var r = q[i];
+        if (!$("letterBox") || !CB.buildLetter) return;
+        $("letterTitle").textContent = r.claim_no + " — " + r.action;
+        $("letterBox").textContent = CB.buildLetter(r, r);
+        Array.prototype.forEach.call(rows, function (x) { x.classList.remove("sel"); });
+        row.classList.add("sel");
+        var panel = $("letterCard");
+        if (panel && window.innerWidth < 860) panel.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      row.addEventListener("click", pick);
+      row.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    });
+  }
+
+  function initReveal() {
+    var els = document.querySelectorAll(".reveal");
+    if (!("IntersectionObserver" in window)) {
+      Array.prototype.forEach.call(els, function (e) { e.classList.add("in"); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (x) { if (x.isIntersecting) { x.target.classList.add("in"); io.unobserve(x.target); } });
+    }, { threshold: 0.12 });
+    Array.prototype.forEach.call(els, function (e) { io.observe(e); });
+  }
+
+  function initStats() {
+    var els = document.querySelectorAll("[data-target]");
+    Array.prototype.forEach.call(els, function (el) {
+      var target = parseFloat(el.getAttribute("data-target"));
+      if (isNaN(target)) return;
+      var dec = el.getAttribute("data-dec");
+      var showDec = dec === "1";
+      var pre = el.getAttribute("data-prefix") || "";
+      var suf = el.getAttribute("data-suffix") || "";
+      animate(el, 0, target, function (v) {
+        return pre + (showDec ? v.toFixed(1) : Math.round(v).toLocaleString("en-US")) + suf;
+      });
+    });
+  }
+
+  function initForm() {
+    var form = $("leadForm");
+    if (!form) return;
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var email = $("email").value.trim();
+      if (!email) { $("email").focus(); return; }
+      var org = $("org").value.trim() || "(not given)";
+      var vol = $("vol").value.trim() || "(not given)";
+      var lines = [
+        "I'd like to trial ClaimBack.",
+        "",
+        "Organization: " + org,
+        "Denials / month: " + vol,
+        "Contact: " + email
+      ];
+      var subject = "ClaimBack pilot interest";
+      $("leadLink").href = "mailto:pilots@claimback.example?subject=" +
+        encodeURIComponent(subject) + "&body=" + encodeURIComponent(lines.join("\n"));
+      $("leadForm").hidden = true;
+      $("leadDone").hidden = false;
+    });
+  }
+
+  function clearDemo(showLetter) {
+    if ($("queueBody")) $("queueBody").innerHTML = "";
+    if ($("demoStatus")) $("demoStatus").textContent = "";
+    if ($("totalVal")) $("totalVal").textContent = "$0.00";
+    if ($("writeoffCount")) $("writeoffCount").textContent = "";
+    if ($("queueCard")) $("queueCard").classList.remove("live");
+    if (showLetter && $("letterBox")) $("letterBox").textContent = LETTER_EMPTY;
+    if ($("letterTitle")) $("letterTitle").textContent = "Drafted action";
+  }
+
+  function runDemo(message) {
+    if (!CURRENT.length) return;
+    renderFeed();
+    renderQueue();
+    if (message && $("demoStatus")) $("demoStatus").textContent = message;
+  }
+
+  function importCsv(file) {
+    if (!file) return;
+    var status = $("importStatus");
+    function say(x) { if (status) status.textContent = x; }
+    if (!/\.csv$/i.test(file.name)) { say("Choose a .csv file"); return; }
+    if (file.size > MAX_CSV_BYTES) { say("CSV too large (max 10 MB)"); return; }
+    say("Reading " + file.name + "...");
+    function finish(parsed) {
+      if (!parsed || parsed.error) { say("Could not import: " + ((parsed && parsed.error) || "empty file")); return; }
+      CURRENT = parsed.rows;
+      clearDemo(false);
+      var count = "Imported " + file.name + ": " + parsed.rows.length + " rows";
+      if (parsed.duplicates) count += " (" + parsed.duplicates + " duplicate rows skipped)";
+      runDemo(count);
+      say("Ready - custom data");
+    }
+    if (file.text) {
+      file.text().then(function (text) {
+        finish(window.CSV ? window.CSV.parseDenials(text) : { error: "CSV parser unavailable" });
+      })["catch"](function () {
+        say("Could not read the file");
+      });
+    } else {
+      var reader = new FileReader();
+      reader.onload = function () {
+        finish(window.CSV ? window.CSV.parseDenials(String(reader.result)) : { error: "CSV parser unavailable" });
+      };
+      reader.onerror = function () { say("Could not read the file"); };
+      reader.readAsText(file);
+    }
+  }
+
+  function initImport() {
+    var strip = $("importStrip"), section = $("demo"), input = $("csvInput");
+    if ($("importBtn")) $("importBtn").addEventListener("click", function () { if (input) input.click(); });
+    if (input) input.addEventListener("change", function () {
+      var file = input.files && input.files[0];
+      importCsv(file);
+      input.value = "";
+    });
+    function allow(e) {
+      if (e.dataTransfer) e.preventDefault();
+      if (strip) strip.classList.add("drag");
+    }
+    function leave(e) {
+      if (e.target === strip) strip.classList.remove("drag");
+    }
+    function drop(e) {
+      if (!e.dataTransfer) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (strip) strip.classList.remove("drag");
+      var file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) importCsv(file);
+    }
+    if (strip) {
+      strip.addEventListener("dragover", allow);
+      strip.addEventListener("dragleave", leave);
+      strip.addEventListener("drop", drop);
+    }
+    if (section) {
+      section.addEventListener("dragover", allow);
+      section.addEventListener("drop", drop);
+    }
+  }
+
+  function main() {
+    if (!CB || !DATA) return;
+    renderFeed();
+    initReveal();
+    initStats();
+    initForm();
+    if ($("letterBox")) $("letterBox").textContent = LETTER_EMPTY;
+    var run = $("runBtn");
+    if (run) run.addEventListener("click", function () {
+      clearDemo(false);
+      runDemo();
+    });
+    var reset = $("resetBtn");
+    if (reset) reset.addEventListener("click", function () {
+      CURRENT = DATA.samples.slice();
+      clearDemo(true);
+      runDemo("Sample data restored.");
+      if ($("importStatus")) $("importStatus").textContent = "";
+    });
+    initImport();
+    setTimeout(function () { if ($("queueBody") && !$("queueBody").innerHTML) renderQueue(); }, 350);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", main);
+  else main();
+})();
+
+</script>
+</body>
+</html>
