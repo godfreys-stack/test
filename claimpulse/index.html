@@ -891,7 +891,7 @@ tr:last-child td {
   font-size: 11.8px;
 }
 
-#queueCard:not(.live) .demo-hd .note {
+#queueCard:not(.is-live) .demo-hd .note {
   display: none;
 }
 
@@ -1541,7 +1541,7 @@ footer {
           </table>
         </div>
       </div>
-      <div id="queueCard" class="card live">
+      <div id="queueCard" class="card">
         <div class="demo-hd"><b>Triage queue</b><span class="tag note">output</span></div>
         <div class="demo-body">
           <table>
@@ -2057,7 +2057,7 @@ footer {
     if ($("totalVal")) animate($("totalVal"), 0, total, money2);
     if ($("writeoffCount")) $("writeoffCount").textContent = writeoffs.length + " / " + q.length;
     var wrap = $("queueCard");
-    if (wrap) wrap.classList.add("live");
+    if (wrap) wrap.classList.add("is-live");
 
     var rows = body.querySelectorAll(".qrow");
     Array.prototype.forEach.call(rows, function (row) {
@@ -2133,7 +2133,7 @@ footer {
     if ($("demoStatus")) $("demoStatus").textContent = "";
     if ($("totalVal")) $("totalVal").textContent = "$0.00";
     if ($("writeoffCount")) $("writeoffCount").textContent = "";
-    if ($("queueCard")) $("queueCard").classList.remove("live");
+    if ($("queueCard")) $("queueCard").classList.remove("is-live");
     if (showLetter && $("letterBox")) $("letterBox").textContent = LETTER_EMPTY;
     if ($("letterTitle")) $("letterTitle").textContent = "Drafted action";
   }
@@ -2155,7 +2155,7 @@ footer {
     function finish(parsed) {
       if (!parsed || parsed.error) { say("Could not import: " + ((parsed && parsed.error) || "empty file")); return; }
       CURRENT = parsed.rows;
-      clearDemo(false);
+      clearDemo(true);
       var count = "Imported " + file.name + ": " + parsed.rows.length + " rows";
       if (parsed.duplicates) count += " (" + parsed.duplicates + " duplicate rows skipped)";
       runDemo(count);
@@ -2233,7 +2233,7 @@ footer {
     function beginTriage() {
       if (busy || !CURRENT.length) return;
       busy = true;
-      clearDemo(false);
+      clearDemo(true);
       if ($("runBtn")) $("runBtn").disabled = true;
       if ($("resetBtn")) $("resetBtn").disabled = true;
       if ($("importBtn")) $("importBtn").disabled = true;
