@@ -891,11 +891,6 @@ tr:last-child td {
   font-size: 11.8px;
 }
 
-#queueCard:not(.live) .demo-body,
-#queueCard:not(.live) .demo-metrics {
-  visibility: hidden;
-}
-
 #queueCard:not(.live) .demo-hd .note {
   display: none;
 }
@@ -1522,13 +1517,13 @@ footer {
       <p class="sect-sub">Synthetic sample data. Run the triage, watch the denial pile become a ranked recovery queue, then click any row to see the exact draft ClaimPulse hands to staff.</p>
     </div>
 
-    <div class="controls reveal">
+    <div class="controls">
       <button id="runBtn" class="btn btn-primary" type="button">Run triage</button>
       <button id="resetBtn" class="btn" type="button">Reset</button>
       <span id="demoStatus" class="muted"></span>
     </div>
 
-    <div class="import-strip reveal" id="importStrip">
+    <div class="import-strip" id="importStrip">
       <b>Import your own CSV</b>
       <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
       <button id="importBtn" class="btn" type="button">Choose CSV</button>
@@ -1546,7 +1541,7 @@ footer {
           </table>
         </div>
       </div>
-      <div id="queueCard" class="card">
+      <div id="queueCard" class="card live">
         <div class="demo-hd"><b>Triage queue</b><span class="tag note">output</span></div>
         <div class="demo-body">
           <table>
@@ -1561,7 +1556,7 @@ footer {
       </div>
     </div>
 
-    <div id="letterCard" class="card reveal">
+    <div id="letterCard" class="card">
       <div class="demo-hd"><b id="letterTitle">Drafted action</b><span class="tag">preview · staff review required</span></div>
       <pre id="letterBox" class="letter"></pre>
     </div>
