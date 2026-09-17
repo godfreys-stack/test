@@ -1551,7 +1551,7 @@ footer {
         <div class="demo-body">
           <table>
             <thead><tr><th>Tier</th><th>Claim</th><th>CPT</th><th>Service</th><th>Denial</th><th>Denied</th><th>Exp.</th><th>Deadline</th><th>Action</th></tr></thead>
-            <tbody id="queueBody"></tbody>
+            <tbody id="queueBody"><tr><td colspan="9" class="empty">Click “Run triage” to rank the sample denials.</td></tr></tbody>
           </table>
         </div>
         <div class="demo-metrics">
@@ -2223,20 +2223,40 @@ footer {
     initStats();
     initForm();
     if ($("letterBox")) $("letterBox").textContent = LETTER_EMPTY;
+    if ($("demoStatus")) $("demoStatus").textContent = "Sample data loaded. Click Run triage.";
+
     var run = $("runBtn");
-    if (run) run.addEventListener("click", function () {
+    var busy = false;
+    function finishTriage() {
+      renderFeed();
+      renderQueue();
+      busy = false;
+      if ($("runBtn")) $("runBtn").disabled = false;
+      if ($("resetBtn")) $("resetBtn").disabled = false;
+      if ($("importBtn")) $("importBtn").disabled = false;
+    }
+    function beginTriage() {
+      if (busy || !CURRENT.length) return;
+      busy = true;
       clearDemo(false);
-      runDemo();
-    });
+      if ($("runBtn")) $("runBtn").disabled = true;
+      if ($("resetBtn")) $("resetBtn").disabled = true;
+      if ($("importBtn")) $("importBtn").disabled = true;
+      if ($("demoStatus")) $("demoStatus").textContent = "Triaging sample denials...";
+      setTimeout(finishTriage, 360);
+    }
+    if (run) run.addEventListener("click", beginTriage);
+
     var reset = $("resetBtn");
-    if (reset) reset.addEventListener("click", function () {
-      CURRENT = DATA.samples.slice();
-      clearDemo(true);
-      runDemo("Sample data restored.");
-      if ($("importStatus")) $("importStatus").textContent = "";
-    });
+    if (reset) {
+      reset.addEventListener("click", function () {
+        if (busy) return;
+        CURRENT = DATA.samples.slice();
+        clearDemo(true);
+        beginTriage();
+      });
+    }
     initImport();
-    setTimeout(function () { if ($("queueBody") && !$("queueBody").innerHTML) renderQueue(); }, 350);
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", main);
